@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Cờ Thú 3D</title>
+  <meta name="description" content="Cờ Thú 3D — chơi với máy hoặc với bạn bè ngay trên trình duyệt." />
+  <meta property="og:title" content="Cờ Thú 3D" />
+  <meta property="og:description" content="Rừng Xanh đối đầu Sa Mạc Đỏ — chơi với máy hoặc mời bạn bè vào phòng." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { --a: #18b884; --b: #f2503c; --ink: #2b2540; --card: rgba(255, 255, 255, .86); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Baloo 2", "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+    body { background: linear-gradient(180deg, #6fd0ff 0%, #a9e8ff 42%, #e3f9ff 70%, #fff3cf 100%); }
+    #app { position: fixed; inset: 0; }
+    canvas { display: block; touch-action: none; }
+    .card { background: var(--card); backdrop-filter: blur(8px); border-radius: 18px; box-shadow: 0 6px 0 rgba(43, 37, 64, .12), 0 10px 24px rgba(43, 37, 64, .12); }
+    #hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; pointer-events: none; }
+    .player { padding: 8px 14px; min-width: 150px; border: 3px solid transparent; transition: .25s; opacity: .75; }
+    .player.active { opacity: 1; transform: translateY(2px) scale(1.04); }
+    .player.p0.active { border-color: var(--a); }
+    .player.p1.active { border-color: var(--b); }
+    .player .nm { font-weight: 800; font-size: 18px; display: flex; align-items: center; gap: 8px; line-height: 1.2; }
+    .player .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+    .p0 .dot { background: var(--a); } .p1 .dot { background: var(--b); }
+    .player .who { font-size: 13px; opacity: .7; font-weight: 500; }
+    .player .cap { font-size: 18px; min-height: 24px; letter-spacing: 1px; }
+    .p1 { text-align: right; } .p1 .nm { justify-content: flex-end; }
+    #status { padding: 8px 20px; font-weight: 800; font-size: 19px; text-align: center; white-space: nowrap; }
+    #status small { display: block; font-weight: 500; font-size: 13px; opacity: .7; margin-top: -4px; }
+    #tools { position: fixed; right: 12px; bottom: 12px; display: flex; gap: 8px; }
+    button { font-family: inherit; font-weight: 700; font-size: 16px; color: var(--ink); border: 0; cursor: pointer; padding: 9px 16px; border-radius: 14px; background: #fff; box-shadow: 0 4px 0 rgba(43, 37, 64, .18); transition: transform .08s, box-shadow .08s; }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(43, 37, 64, .18); }
+    button:disabled { opacity: .45; cursor: default; }
+    button.big { font-size: 20px; padding: 13px 22px; width: 100%; color: #fff; }
+    button.green { background: var(--a); } button.red { background: var(--b); } button.blue { background: #3ba7f5; } button.purple { background: #8b5cf6; }
+    .hidden { display: none !important; }
+    .status { min-height: 24px; font-weight: 700; margin: 8px 0 2px; } .status.err { color: #d93025; } .status.wait { color: #8b5cf6; }
+    .code { font-size: 40px; font-weight: 800; letter-spacing: 6px; line-height: 1.1; color: #8b5cf6; }
+    input { font-family: inherit; font-size: 17px; font-weight: 700; color: var(--ink); border: 2px solid #d9dde6; border-radius: 12px; padding: 8px 12px; min-width: 0; flex: 1; outline: none; }
+    input:focus { border-color: #8b5cf6; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    #joinCode { text-transform: uppercase; text-align: center; letter-spacing: 3px; }
+    #roomBox { background: #f4f0ff; border-radius: 14px; padding: 10px 12px 12px; }
+    #legend { position: fixed; left: 12px; bottom: 12px; padding: 6px 14px; font-size: 16px; font-weight: 700; }
+    #legend small { font-weight: 500; opacity: .75; }
+    .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(43, 37, 64, .28); z-index: 5; }
+    .overlay.hidden { display: none; }
+    .panel { width: min(430px, 92vw); max-height: 90vh; overflow: auto; padding: 22px 26px 24px; text-align: center; background: rgba(255, 255, 255, .96); }
+    .panel h1 { margin: 0; font-size: 44px; line-height: 1.05; font-weight: 800; background: linear-gradient(90deg, var(--a), #f5a623, var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .panel h2 { margin: 0 0 6px; font-size: 30px; }
+    .panel p { margin: 6px 0 14px; opacity: .8; font-size: 16px; line-height: 1.35; }
+    .stack { display: flex; flex-direction: column; gap: 10px; }
+    .seg { display: flex; gap: 6px; justify-content: center; margin: 2px 0 6px; }
+    .seg button { padding: 6px 14px; font-size: 15px; background: #eef1f6; box-shadow: none; }
+    .seg button.on { background: var(--ink); color: #fff; }
+    .rules { text-align: left; font-size: 15.5px; line-height: 1.4; }
+    .rules li { margin-bottom: 5px; }
+    .lbl { font-size: 14px; opacity: .65; font-weight: 700; margin-top: 4px; }
+    @media (max-width: 720px) {
+      .player { min-width: 0; padding: 6px 10px; } .player .nm { font-size: 15px; } .player .who { display: none; }
+      #status { font-size: 15px; padding: 6px 12px; } #legend { display: none; }
+      button { padding: 8px 12px; font-size: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div class="card player p0" id="p0">
+      <div class="nm"><span class="dot"></span>Rừng Xanh</div>
+      <div class="who" id="who0">Bạn</div>
+      <div class="cap" id="cap0"></div>
+    </div>
+    <div class="card" id="status">Cờ Thú 3D</div>
+    <div class="card player p1" id="p1">
+      <div class="nm">Sa Mạc Đỏ<span class="dot"></span></div>
+      <div class="who" id="who1">Máy</div>
+      <div class="cap" id="cap1"></div>
+    </div>
+  </div>
+
+  <div class="card" id="legend">🐘8 › 🦁7 › 🐯6 › 🐆5 › 🐺4 › 🐶3 › 🐱2 › 🐭1 <small>· 🐭 hạ được 🐘</small></div>
+
+  <div id="tools">
+    <button id="btnUndo" title="Đi lại">↩ Đi lại</button>
+    <button id="btnSound" title="Âm thanh">🔊</button>
+    <button id="btnRules">📖 Luật</button>
+    <button id="btnMenu">☰ Ván mới</button>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="card panel">
+      <h1>Cờ Thú 3D</h1>
+      <p>Rừng Xanh đối đầu Sa Mạc Đỏ — chiếm hang địch để chiến thắng!</p>
+      <div class="stack">
+        <div class="lbl">Độ khó của máy</div>
+        <div class="seg" id="levelSeg">
+          <button data-l="1">Dễ</button><button data-l="2" class="on">Vừa</button><button data-l="3">Khó</button>
+        </div>
+        <div class="lbl">Phe của bạn khi đấu máy</div>
+        <div class="seg" id="sideSeg">
+          <button data-s="0" class="on">🌴 Rừng Xanh (đi trước)</button><button data-s="1">🌵 Sa Mạc Đỏ</button>
+        </div>
+        <button class="big green" id="playAI">🤖 Chơi với máy</button>
+        <button class="big red" id="playPvP">🧑‍🤝‍🧑 Hai người (chung máy)</button>
+        <button class="big purple" id="playOnline">🌐 Chơi online với bạn</button>
+        <button class="big blue" id="playDemo">👀 Xem máy đấu máy</button>
+        <button id="menuClose" style="display:none">Tiếp tục ván đang chơi</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="online">
+    <div class="card panel">
+      <h2>🌐 Chơi online</h2>
+      <p>Tạo phòng rồi gửi link cho bạn bè, hoặc nhập mã phòng bạn bè gửi.</p>
+      <div class="stack">
+        <button class="big purple" id="onCreate">Tạo phòng mới</button>
+        <div id="roomBox" class="hidden">
+          <div class="lbl">Mã phòng</div>
+          <div class="code" id="roomCode"></div>
+          <div class="row"><input id="roomLink" readonly /><button id="onCopy">Chép link</button></div>
+        </div>
+        <div class="lbl">Hoặc vào phòng có sẵn</div>
+        <div class="row"><input id="joinCode" maxlength="8" placeholder="MÃ PHÒNG" autocomplete="off" /><button id="onJoin">Vào phòng</button></div>
+        <div class="status" id="onStatus"></div>
+        <button id="onBack">← Quay lại</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="rules">
+    <div class="card panel">
+      <h2>Luật chơi</h2>
+      <ul class="rules">
+        <li>Mỗi lượt đi <b>1 ô</b> ngang hoặc dọc. Bấm vào quân rồi bấm ô muốn đến.</li>
+        <li>Quân <b>bằng hoặc mạnh hơn</b> ăn được quân yếu hơn: 🐘8 › 🦁7 › 🐯6 › 🐆5 › 🐺4 › 🐶3 › 🐱2 › 🐭1.</li>
+        <li><b>Chuột</b> hạ được <b>Voi</b>, còn Voi không ăn được Chuột.</li>
+        <li>Chỉ <b>Chuột</b> bơi được dưới sông. Chuột dưới nước và quân trên bờ không ăn được nhau.</li>
+        <li><b>Sư tử</b> và <b>Hổ</b> nhảy được qua sông (ngang hoặc dọc), trừ khi có Chuột chắn đường.</li>
+        <li>Quân đứng trong <b>bẫy của đối phương</b> mất hết sức mạnh — quân nào cũng ăn được.</li>
+        <li>Không được vào hang nhà. <b>Vào hang địch</b> hoặc <b>ăn hết quân địch</b> là thắng; hết nước đi là thua.</li>
+        <li>Thế cờ lặp lại <b>3 lần</b> thì hoà.</li>
+      </ul>
+      <button class="green big" id="rulesClose">Đã hiểu!</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="result">
+    <div class="card panel">
+      <h2 id="resTitle">Chiến thắng!</h2>
+      <p id="resText"></p>
+      <div class="stack">
+        <button class="big green" id="resAgain">Chơi lại</button>
+        <button id="resMenu">Về menu</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
