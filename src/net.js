@@ -1,4 +1,4 @@
-// Chơi online ngang hàng (WebRTC) qua PeerJS. Chủ phòng = Rừng Xanh (0), khách = Sa Mạc Đỏ (1).
+// Chơi online ngang hàng (WebRTC) qua PeerJS. Chủ phòng = phe đi trước (0), khách = phe đi sau (1).
 import { Peer } from 'peerjs';
 
 const PREFIX = 'cothu3d-room-';

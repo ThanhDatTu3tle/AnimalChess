@@ -6,7 +6,7 @@
   <title>Cờ Thú 3D</title>
   <meta name="description" content="Cờ Thú 3D — chơi với máy hoặc với bạn bè ngay trên trình duyệt." />
   <meta property="og:title" content="Cờ Thú 3D" />
-  <meta property="og:description" content="Rừng Xanh đối đầu Sa Mạc Đỏ — chơi với máy hoặc mời bạn bè vào phòng." />
+  <meta property="og:description" content="Chọn lãnh địa Đồng Xanh, Sa Mạc, Băng Tuyết, Rừng Thẳm hay Núi Lửa rồi đấu cờ thú với máy hoặc bạn bè." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐯</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet" />
@@ -61,6 +61,13 @@
     .rules { text-align: left; font-size: 15.5px; line-height: 1.4; }
     .rules li { margin-bottom: 5px; }
     .lbl { font-size: 14px; opacity: .65; font-weight: 700; margin-top: 4px; }
+    .bmrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #f6f7fb; border-radius: 14px; padding: 6px 8px 6px 12px; }
+    .bmrow .who { text-align: left; font-size: 13px; line-height: 1.15; opacity: .8; font-weight: 700; min-width: 0; }
+    .bmrow .who b { display: block; font-size: 16px; opacity: 1; }
+    .bm { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+    .bm button { font-size: 20px; line-height: 1; padding: 6px 7px; background: #fff; box-shadow: 0 2px 0 rgba(43, 37, 64, .12); border: 2px solid transparent; }
+    .bm button.on { border-color: var(--ink); background: #fffbe6; }
+    .bm button:disabled { opacity: .25; }
     @media (max-width: 720px) {
       .player { min-width: 0; padding: 6px 10px; } .player .nm { font-size: 15px; } .player .who { display: none; }
       #status { font-size: 15px; padding: 6px 12px; } #legend { display: none; }
@@ -73,13 +80,13 @@
 
   <div id="hud">
     <div class="card player p0" id="p0">
-      <div class="nm"><span class="dot"></span>Rừng Xanh</div>
+      <div class="nm"><span class="dot"></span><span id="name0">Đồng Xanh</span></div>
       <div class="who" id="who0">Bạn</div>
       <div class="cap" id="cap0"></div>
     </div>
     <div class="card" id="status">Cờ Thú 3D</div>
     <div class="card player p1" id="p1">
-      <div class="nm">Sa Mạc Đỏ<span class="dot"></span></div>
+      <div class="nm"><span id="name1">Sa Mạc Đỏ</span><span class="dot"></span></div>
       <div class="who" id="who1">Máy</div>
       <div class="cap" id="cap1"></div>
     </div>
@@ -97,15 +104,18 @@
   <div class="overlay" id="menu">
     <div class="card panel">
       <h1>Cờ Thú 3D</h1>
-      <p>Rừng Xanh đối đầu Sa Mạc Đỏ — chiếm hang địch để chiến thắng!</p>
+      <p id="tagline"></p>
       <div class="stack">
+        <div class="lbl">Lãnh địa hai phe</div>
+        <div class="bmrow"><div class="who">Đi trước<b id="bmName0"></b></div><div class="bm" id="bm0"></div></div>
+        <div class="bmrow"><div class="who">Đi sau<b id="bmName1"></b></div><div class="bm" id="bm1"></div></div>
         <div class="lbl">Độ khó của máy</div>
         <div class="seg" id="levelSeg">
           <button data-l="1">Dễ</button><button data-l="2" class="on">Vừa</button><button data-l="3">Khó</button>
         </div>
         <div class="lbl">Phe của bạn khi đấu máy</div>
         <div class="seg" id="sideSeg">
-          <button data-s="0" class="on">🌴 Rừng Xanh (đi trước)</button><button data-s="1">🌵 Sa Mạc Đỏ</button>
+          <button data-s="0" class="on">Phe đi trước</button><button data-s="1">Phe đi sau</button>
         </div>
         <button class="big green" id="playAI">🤖 Chơi với máy</button>
         <button class="big red" id="playPvP">🧑‍🤝‍🧑 Hai người (chung máy)</button>
@@ -121,6 +131,7 @@
       <h2>🌐 Chơi online</h2>
       <p>Tạo phòng rồi gửi link cho bạn bè, hoặc nhập mã phòng bạn bè gửi.</p>
       <div class="stack">
+        <div class="bmrow"><div class="who">Lãnh địa của bạn<b id="bmOnName"></b></div><div class="bm" id="bmOn"></div></div>
         <button class="big purple" id="onCreate">Tạo phòng mới</button>
         <div id="roomBox" class="hidden">
           <div class="lbl">Mã phòng</div>

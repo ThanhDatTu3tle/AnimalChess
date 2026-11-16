@@ -30,7 +30,9 @@ Cần Node 20.19+ hoặc 22+ (Vite 8 yêu cầu).
 
 Tham số URL tiện cho việc thử:
 
-- `?mode=ai` / `?mode=pvp` / `?mode=demo` — vào thẳng ván, bỏ qua menu. Thêm `&side=1` để cầm phe Sa Mạc Đỏ khi đấu máy.
+- `?mode=ai` / `?mode=pvp` / `?mode=demo` — vào thẳng ván, bỏ qua menu. Thêm `&side=1` để cầm phe đi sau khi đấu máy.
+- `?b0=snow&b1=volcano` — chọn biome hai phe (`plains`, `desert`, `snow`, `forest`, `volcano`).
+- `?fps=1` — hiện FPS và số draw call ở góc trái dưới.
 - `?room=MÃ` — vào phòng online có sẵn (đây cũng là dạng link mời bạn bè).
 - `?create=MÃ` — tạo phòng online với mã chỉ định.
 
@@ -52,7 +54,9 @@ Tham số URL tiện cho việc thử:
 | `src/aiWorker.js` | Chạy AI trong Web Worker để không giật hình |
 | `src/net.js` | Lớp `Net`: tạo/vào phòng qua PeerJS |
 | `src/scene/helpers.js` | Vật liệu toon, cache geometry, hàm `mesh`/`group`, `mergeStatic`, quy đổi toạ độ |
-| `src/scene/world.js` | Map: nền đất, sông (shader), cầu, ô cờ, bẫy, hang, cây cối, mây; hằng `TEAM` |
+| `src/scene/biomes.js` | Dữ liệu 5 biome (tên phe, màu giáp, màu lông từng con, ô cờ, sông); `TEAM` và `setTeams()` |
+| `src/scene/decor.js` | Cảnh vật và bờ sông của từng biome |
+| `src/scene/world.js` | Map: nền đất, sông (shader, mỗi nửa theo biome), cầu, ô cờ, bẫy, hang, mây; `dispose()` để dựng lại khi đổi biome |
 | `src/scene/animals.js` | Dựng 8 loại quân thú + vũ khí + huy hiệu cấp bậc |
 | `test/selfplay.mjs` | Test luật và AI tự đấu |
 | `vite.config.js` | `base: './'` để bản build chạy ở mọi đường dẫn |
@@ -63,20 +67,22 @@ Tham số URL tiện cho việc thử:
 **Bàn cờ** (`rules.js`)
 
 - 7 cột × 9 hàng, ô = `r * 7 + c`. `Int8Array(63)`: `0` trống, `+rank` quân phe 0, `-rank` quân phe 1.
-- Phe 0 = **Rừng Xanh** (hàng 0–2, đi trước). Phe 1 = **Sa Mạc Đỏ** (hàng 6–8).
+- Phe 0 = đi trước (hàng 0–2), phe 1 = đi sau (hàng 6–8). Tên và màu phe do biome quyết định (mặc định Đồng Xanh / Sa Mạc Đỏ).
 - Cấp: Chuột 1, Mèo 2, Chó 3, Sói 4, Báo 5, Hổ 6, Sư tử 7, Voi 8.
 - Nước đi mã hoá thành số: `from | (to << 6)`.
 - Sông: cột 1, 2, 4, 5 ở hàng 3–5. Hang: (3,0) và (3,8). Bẫy: ba ô quanh mỗi hang.
 
 **Toạ độ 3D** (`helpers.js`)
 
-- `x = c - 3`, `z = 4 - r`. Hàng 0 (Rừng Xanh) nằm ở phía `+z`, gần camera mặc định.
+- `x = c - 3`, `z = 4 - r`. Hàng 0 (phe 0) nằm ở phía `+z`, gần camera mặc định.
 - `TILE_Y = 0.07` là mặt ô cờ, `WATER_Y = -0.2` là mặt nước.
 - Model thú quay mặt về `+z` cục bộ; phe 0 xoay π để hướng về địch.
 
 **Gộp mesh** (`mergeStatic`)
 
-- Sau khi dựng xong, các mesh tĩnh cùng vật liệu được gộp lại để giảm draw call (từ ~3000 xuống ~980).
+- Sau khi dựng xong, các mesh tĩnh được gộp lại để giảm draw call. Mesh toon trơn (không texture, không trong suốt) gộp chung bất kể màu: màu được ghi vào thuộc tính `color` của đỉnh và dùng vật liệu chung `toonVC`. Kết quả: ~1020 → ~200 draw call/khung (tính cả lượt vẽ bóng).
+- Quân cờ gộp với `looseShadow: true`: chi tiết không đổ bóng (mắt, râu) gộp vào nhóm đổ bóng.
+- Vật liệu phát sáng (`glow()` trong `decor.js`) và vật liệu trong suốt vẫn gộp theo từng vật liệu, nên cần dùng chung (có cache), đừng tạo mới cho mỗi mesh.
 - Node nào cần chuyển động phải gắn `userData.dyn = true` **trước** khi gộp, nếu không sẽ bị gộp chết vào nền.
 
 **Trạng thái ván** (`main.js`, biến `game`)
@@ -85,7 +91,7 @@ Tham số URL tiện cho việc thử:
 - `winner`: `-1` chưa xong, `0`/`1` phe thắng, `2` hoà.
 - `seen`: đếm số lần mỗi thế cờ xuất hiện (dùng cho luật hoà và để AI tránh lặp).
 
-**Hook debug** (chỉ có ở bản dev): `window.__dbg` chứa `scene, camera, renderer, game, controls, pieces, frame, playMove, select, net`. Dùng `__dbg.frame()` để tự bước khung hình khi `requestAnimationFrame` không chạy (tab ẩn).
+**Hook debug** (chỉ có ở bản dev): `window.__dbg` chứa `scene, camera, renderer, game, controls, pieces, frame, playMove, select, net, applyBiomes, rebuildPieces, world`. Dùng `__dbg.frame()` để tự bước khung hình khi `requestAnimationFrame` không chạy (tab ẩn).
 
 ## 6. Những gì đã có
 
@@ -103,15 +109,21 @@ Tham số URL tiện cho việc thử:
 
 - Đấu máy: 3 độ khó (Dễ độ sâu 2, Vừa độ sâu 4, Khó tới độ sâu 9 trong 1,4 giây), chọn được phe.
 - Hai người chung máy.
-- Online qua phòng: chủ phòng là Rừng Xanh, khách là Sa Mạc Đỏ và được lật camera về phía mình.
+- Online qua phòng: chủ phòng đi trước, khách đi sau và được lật camera về phía mình. Mỗi người chọn biome của mình trong bảng online; khi kết nối hai bên gửi `{t:'hello', b}`, nếu trùng thì khách bị đổi sang biome kế tiếp.
 - Xem máy đấu máy.
 
 **Hình ảnh**
 
-- Rừng Xanh: cọ, cây tán tròn, bụi, hoa, nấm, đá. Sa Mạc Đỏ: xương rồng, núi đá tầng, cây keo, đụn cát.
+- **5 biome**, mỗi phe tự chọn cho nửa sân mình trong menu (không cho trùng, lựa chọn lưu vào localStorage):
+  - 🌴 Đồng Xanh: cọ, cây tán tròn, bụi, hoa, nấm; sông có lá súng.
+  - 🌵 Sa Mạc Đỏ: xương rồng, núi đá tầng, cây keo, đụn cát.
+  - ❄️ Băng Tuyết: thông phủ tuyết, người tuyết, tinh thể băng; sông có băng trôi. Hổ trắng, báo tuyết, sói Bắc Cực, voi ma mút.
+  - 🌲 Rừng Thẳm: thông và cây cổ thụ sẫm màu, nấm phát sáng, dương xỉ, khúc gỗ. Lông sẫm, Báo là báo đen.
+  - 🌋 Núi Lửa: núi lửa phun khói, hồ dung nham, đá vỏ chai, cây chết; mép sông là dải dung nham. Hổ vằn lửa, báo đốm lửa, sư tử bờm lửa.
+- Biome quyết định tên phe, màu giáp/áo choàng/bệ, trang trí vai, màu lông từng con, ô cờ, nền đất và nửa sông bên đó.
 - Sông chảy ngang có shader nước hoạt hình, thác đầu nguồn, lá súng; ba cột đất giữa sông là ba cây cầu gỗ.
 - Bẫy là hố chông; hang là hố tối có vòng sáng màu đội và cờ hiệu.
-- Quân thú chibi, giáp + băng đầu + bệ đứng theo màu đội (xanh ngọc `#18b884` / đỏ cam `#f2503c`), huy hiệu số cấp trên đầu.
+- Quân thú chibi, giáp + băng đầu + bệ đứng theo màu biome, huy hiệu số cấp trên đầu.
 - Vũ khí: Chuột dao găm, Mèo vuốt sắt, Chó kiếm + khiên, Sói rìu hai lưỡi, Báo giáo, Hổ đại kiếm, Sư tử đinh ba + vương miện, Voi búa tạ.
 
 **Thao tác và hiệu ứng**
@@ -135,7 +147,7 @@ Tham số URL tiện cho việc thử:
 - Online: chưa vào lại được ván đang dở khi rớt mạng; chưa có máy chủ trung chuyển (TURN) nên một số mạng công ty hoặc 4G có thể không kết nối được.
 - Chưa có nút xin thua / xin hoà.
 - Chế độ hai người chung máy không tự lật camera theo lượt.
-- Khoảng 980 draw call mỗi khung hình; chưa đo trên máy yếu hoặc điện thoại.
+- Khoảng 200 draw call mỗi khung hình (đã tối ưu từ ~1020); chưa đo FPS thực tế trên máy yếu hoặc điện thoại.
 - File JS sau build khoảng 720 kB (chưa tách chunk).
 
 ## 9. Tình trạng kiểm thử
@@ -157,3 +169,7 @@ Chưa có thứ tự ưu tiên; chờ góp ý sau khi chơi thử.
 - Online: vào lại ván khi rớt mạng, nút xin thua, máy chủ TURN.
 - Tối ưu cho điện thoại và máy yếu.
 - Tuỳ chọn đổi thứ bậc Chó/Sói.
+
+## 12. Nhật ký
+
+- 17/11/2026: tối ưu draw call (vertex color khi gộp mesh, pixel ratio tối đa 1.5, `?fps=1`); thêm hệ thống 5 biome chọn theo từng phe, cả online.

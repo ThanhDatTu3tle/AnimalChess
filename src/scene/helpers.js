@@ -79,11 +79,18 @@ export const WATER_Y = -0.2;
 export const cellX = (c) => c - 3;
 export const cellZ = (r) => 4 - r;
 
+// Vật liệu toon dùng màu theo đỉnh: mọi mesh toon trơn (không texture, không trong suốt)
+// được gộp chung vào vật liệu này dù khác màu -> mỗi nhóm tĩnh chỉ còn 1 draw call.
+export const toonVC = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap });
+const isPlainToon = (m) => m.isMeshToonMaterial && !m.map && !m.transparent && !m.vertexColors;
+
 /**
- * Gộp các mesh tĩnh theo vật liệu để giảm số draw call.
+ * Gộp các mesh tĩnh để giảm số draw call.
+ * Mesh toon trơn được gộp bất kể màu (màu ghi vào thuộc tính `color` của đỉnh);
+ * các vật liệu khác gộp theo từng vật liệu.
  * Node có userData.dyn = true là node chuyển động: mesh con được gộp bên trong nó.
  */
-export function mergeStatic(root) {
+export function mergeStatic(root, { looseShadow = false } = {}) {
   root.updateMatrixWorld(true);
   const buckets = new Map();
   const inv = new THREE.Matrix4(), rel = new THREE.Matrix4();
@@ -93,17 +100,29 @@ export function mergeStatic(root) {
     if (!(mat.isMeshToonMaterial || mat.isMeshBasicMaterial) || mat.visible === false) return;
     let a = o.parent;
     while (a !== root && !a.userData.dyn) a = a.parent;
-    const key = a.uuid + mat.uuid + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0) + o.renderOrder;
+    const vc = isPlainToon(mat);
+    // looseShadow: gộp cả mesh không đổ bóng vào nhóm đổ bóng (chi tiết nhỏ như mắt, râu)
+    const loose = vc && looseShadow;
+    const key = a.uuid + (vc ? 'vc' : mat.uuid) + (loose ? '' : `${+o.castShadow}${+o.receiveShadow}`) + o.renderOrder;
     let b = buckets.get(key);
-    if (!b) buckets.set(key, (b = { anchor: a, mat, cast: o.castShadow, receive: o.receiveShadow, order: o.renderOrder, items: [] }));
+    if (!b) buckets.set(key, (b = { anchor: a, mat: vc ? toonVC : mat, vc, cast: false, receive: false, order: o.renderOrder, items: [] }));
+    b.cast ||= o.castShadow;
+    b.receive ||= o.receiveShadow;
     b.items.push(o);
   });
   for (const b of buckets.values()) {
-    if (b.items.length < 2) continue;
+    if (b.items.length < 2 && !b.vc) continue;
     inv.copy(b.anchor.matrixWorld).invert();
+    const keep = b.vc ? ['position', 'normal', 'color'] : ['position', 'normal', 'uv'];
     const geos = b.items.map((o) => {
       let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-      for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal' && n !== 'uv') g.deleteAttribute(n);
+      if (b.vc) {
+        const n = g.attributes.position.count, c = o.material.color;
+        const arr = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      }
+      for (const n of Object.keys(g.attributes)) if (!keep.includes(n)) g.deleteAttribute(n);
       g.applyMatrix4(rel.multiplyMatrices(inv, o.matrixWorld));
       return g;
     });

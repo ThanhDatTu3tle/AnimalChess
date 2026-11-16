@@ -1,20 +1,24 @@
 import * as THREE from 'three';
 import { RAT, CAT, DOG, WOLF, LEOPARD, TIGER, LION, ELEPHANT, ANIMALS } from '../rules.js';
 import { toon, G, mesh, group, gradientMap, mergeStatic } from './helpers.js';
-import { TEAM } from './world.js';
+import { TEAM } from './biomes.js';
 
 const STEEL = 0xe6edf5, STEEL_D = 0xaab6c6, GOLD = 0xffcc4d, WOOD = 0x9a6a3c, DARK = 0x2a2233, PINK = 0xff9eb5, WHITE = 0xfffaf0;
 
 // ---------- Hoạ tiết lông (vằn hổ, đốm báo) ----------
 const texCache = {};
-function furTex(kind) {
-  if (texCache[kind]) return texCache[kind];
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+/** Màu sẫm hơn (k < 1) của một màu */
+const shade = (c, k) => new THREE.Color(c).multiplyScalar(k).getHex();
+function furTex(kind, base, spot, spot2) {
+  const key = [kind, base, spot, spot2].join();
+  if (texCache[key]) return texCache[key];
   const c = document.createElement('canvas');
   c.width = 256; c.height = 128;
   const x = c.getContext('2d');
   if (kind === 'tiger') {
-    x.fillStyle = '#f79433'; x.fillRect(0, 0, 256, 128);
-    x.fillStyle = '#2a2233';
+    x.fillStyle = hex(base); x.fillRect(0, 0, 256, 128);
+    x.fillStyle = hex(spot);
     // vằn toả từ đỉnh đầu
     for (let i = 0; i < 12; i++) {
       const u = (i / 12) * 256 + 6;
@@ -28,26 +32,26 @@ function furTex(kind) {
       x.beginPath(); x.moveTo(cx + 22, y + 5); x.lineTo(cx - 16, y + 10); x.lineTo(cx + 22, y + 15); x.fill();
     }
   } else if (kind === 'leopard') {
-    x.fillStyle = '#f6c851'; x.fillRect(0, 0, 256, 128);
+    x.fillStyle = hex(base); x.fillRect(0, 0, 256, 128);
     let s = 7;
     const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
     for (let i = 0; i < 70; i++) {
       const px = rnd() * 256, py = rnd() * 110 + 4;
       if (px > 34 && px < 94 && py > 44 && py < 104) continue; // chừa khuôn mặt
       const r = 4 + rnd() * 3.5;
-      x.fillStyle = '#6b4320'; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill();
-      x.fillStyle = '#e09a2e'; x.beginPath(); x.arc(px + 0.6, py + 0.4, r * 0.48, 0, 7); x.fill();
+      x.fillStyle = hex(spot); x.beginPath(); x.arc(px, py, r, 0, 7); x.fill();
+      x.fillStyle = hex(spot2); x.beginPath(); x.arc(px + 0.6, py + 0.4, r * 0.48, 0, 7); x.fill();
     }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping;
-  texCache[kind] = t;
+  texCache[key] = t;
   return t;
 }
 const furMatCache = {};
-function furMat(kind) {
-  return (furMatCache[kind] ??= new THREE.MeshToonMaterial({ map: furTex(kind), gradientMap }));
+function furMat(kind, base, spot, spot2) {
+  return (furMatCache[[kind, base, spot, spot2].join()] ??= new THREE.MeshToonMaterial({ map: furTex(kind, base, spot, spot2), gradientMap }));
 }
 
 function tube(parent, pts, radius, color) {
@@ -124,15 +128,11 @@ function claws(parent, x) {
   mesh(parent, G.box(0.11, 0.05, 0.06), DARK, { p: [x, 0, 0.02] });
 }
 
+// Màu lông lấy theo biome của phe (TEAM[team].fur), ở đây chỉ có tỉ lệ và loại hoạ tiết
 const SPEC = {
-  [RAT]: { fur: 0xa8aebd, belly: 0xe6e8ef, scale: 0.74 },
-  [CAT]: { fur: 0xf7ad55, belly: 0xfff1d6, scale: 0.8 },
-  [DOG]: { fur: 0xd09a62, belly: 0xf6e3c5, scale: 0.86 },
-  [WOLF]: { fur: 0x8592ab, belly: 0xeef2f8, scale: 0.92 },
-  [LEOPARD]: { fur: 0xf6c851, belly: 0xfff3cf, scale: 0.95, tex: 'leopard' },
-  [TIGER]: { fur: 0xf79433, belly: 0xfff3e0, scale: 1.02, tex: 'tiger' },
-  [LION]: { fur: 0xf2bd5a, belly: 0xffeec2, scale: 1.08 },
-  [ELEPHANT]: { fur: 0x9db4d6, belly: 0xc9d8ee, scale: 1.16 },
+  [RAT]: { scale: 0.74 }, [CAT]: { scale: 0.8 }, [DOG]: { scale: 0.86 }, [WOLF]: { scale: 0.92 },
+  [LEOPARD]: { scale: 0.95, tex: 'leopard' }, [TIGER]: { scale: 1.02, tex: 'tiger' },
+  [LION]: { scale: 1.08 }, [ELEPHANT]: { scale: 1.16 },
 };
 
 function badgeSprite(rank, team) {
@@ -140,7 +140,7 @@ function badgeSprite(rank, team) {
   c.width = c.height = 128;
   const x = c.getContext('2d');
   x.beginPath(); x.arc(64, 64, 56, 0, 7);
-  x.fillStyle = TEAM[team].css; x.fill();
+  x.fillStyle = TEAM[team].badge; x.fill();
   x.lineWidth = 8; x.strokeStyle = '#ffffff'; x.stroke();
   x.fillStyle = '#ffffff';
   x.font = '900 78px "Baloo 2", "Segoe UI", Arial, sans-serif';
@@ -157,11 +157,12 @@ function badgeSprite(rank, team) {
 
 /** Dựng một quân thú. Mặt quay về +z (cục bộ). */
 export function buildAnimal(rank, team) {
-  const sp = SPEC[rank];
   const T = TEAM[team];
+  const [furC, bellyC, ex1, ex2] = T.fur[rank];
+  const sp = { ...SPEC[rank], fur: furC, belly: bellyC };
   const outer = new THREE.Group();
   const model = group(outer, { s: sp.scale });
-  const fur = sp.tex ? furMat(sp.tex) : toon(sp.fur);
+  const fur = sp.tex ? furMat(sp.tex, furC, ex1, ex2 ?? ex1) : toon(sp.fur);
   const F = sp.fur;
   const big = rank === ELEPHANT;
 
@@ -188,8 +189,8 @@ export function buildAnimal(rank, team) {
   // giáp vai
   for (const sx of [-1, 1]) {
     mesh(bob, G.sphere(0.085, 10, 8), T.dark, { p: [sx * 0.21 * bw, 0.5, 0], s: [1.1, 0.75, 1.1] });
-    if (team === 1) mesh(bob, G.cone(0.03, 0.1, 6), GOLD, { p: [sx * 0.235 * bw, 0.57, 0], r: [0, 0, -sx * 0.5] });
-    else mesh(bob, G.sphere(1, 8, 6), 0x7be36b, { p: [sx * 0.25 * bw, 0.56, 0], s: [0.07, 0.025, 0.045], r: [0, 0, sx * 0.7] });
+    if (T.orn.kind === 'spike') mesh(bob, G.cone(0.03, 0.1, 6), T.orn.color, { p: [sx * 0.235 * bw, 0.57, 0], r: [0, 0, -sx * 0.5] });
+    else mesh(bob, G.sphere(1, 8, 6), T.orn.color, { p: [sx * 0.25 * bw, 0.56, 0], s: [0.07, 0.025, 0.045], r: [0, 0, sx * 0.7] });
   }
   // tay trái
   const armL = group(bob, { p: [-0.23 * bw, 0.47, 0] });
@@ -256,13 +257,14 @@ export function buildAnimal(rank, team) {
       mesh(head, G.sphere(0.022, 8, 6), PINK, { p: [0, -0.025, 0.245] });
       for (const sx of [-1, 1]) for (const a of [-0.18, 0.18]) mesh(head, G.cyl(0.004, 0.004, 0.2, 4), WHITE, { p: [sx * 0.17, -0.05 + a * 0.12, 0.17], r: [0, 0, Math.PI / 2 + sx * a], cast: false });
       // vằn trán
-      for (const dx of [-0.05, 0, 0.05]) mesh(head, G.box(0.02, 0.07, 0.02), 0xd9822b, { p: [dx, 0.17, 0.12 - Math.abs(dx) * 0.4], r: [-0.6, 0, 0], cast: false });
+      for (const dx of [-0.05, 0, 0.05]) mesh(head, G.box(0.02, 0.07, 0.02), shade(F, 0.78), { p: [dx, 0.17, 0.12 - Math.abs(dx) * 0.4], r: [-0.6, 0, 0], cast: false });
       tube(bob, [[0, 0.22, -0.18], [0, 0.2, -0.34], [0.04, 0.36, -0.42], [0.1, 0.52, -0.36], [0.08, 0.6, -0.28]], 0.035, F);
       break;
     }
     case DOG: {
-      for (const sx of [-1, 1]) mesh(head, G.sphere(1, 10, 8), 0x8a5a34, { p: [sx * 0.21, 0.06, -0.01], s: [0.06, 0.15, 0.085], r: [0, 0, sx * 0.25] });
-      mesh(head, G.sphere(1, 10, 8), 0x8a5a34, { p: [0.09, 0.05, 0.155], s: [0.085, 0.09, 0.05], cast: false });
+      const earC = shade(F, 0.62);
+      for (const sx of [-1, 1]) mesh(head, G.sphere(1, 10, 8), earC, { p: [sx * 0.21, 0.06, -0.01], s: [0.06, 0.15, 0.085], r: [0, 0, sx * 0.25] });
+      mesh(head, G.sphere(1, 10, 8), earC, { p: [0.09, 0.05, 0.155], s: [0.085, 0.09, 0.05], cast: false });
       mesh(head, G.sphere(0.1, 12, 8), sp.belly, { p: [0, -0.06, 0.17], s: [1.15, 0.8, 1.0] });
       mesh(head, G.sphere(0.035, 8, 6), DARK, { p: [0, -0.025, 0.27], s: [1.2, 0.85, 1] });
       mesh(head, G.box(0.05, 0.06, 0.015), 0xff7a90, { p: [0, -0.125, 0.235], r: [0.3, 0, 0], cast: false });
@@ -287,7 +289,7 @@ export function buildAnimal(rank, team) {
       const tig = rank === TIGER;
       for (const sx of [-1, 1]) {
         mesh(head, G.sphere(0.07, 10, 8), F, { p: [sx * 0.15, 0.17, -0.01], s: [1, 1, 0.5] });
-        mesh(head, G.sphere(0.04, 8, 6), tig ? WHITE : 0x6b4320, { p: [sx * 0.15, 0.17, 0.012], s: [1, 1, 0.5], cast: false });
+        mesh(head, G.sphere(0.04, 8, 6), tig ? WHITE : ex1, { p: [sx * 0.15, 0.17, 0.012], s: [1, 1, 0.5], cast: false });
         if (tig) mesh(head, G.sphere(0.075, 10, 8), WHITE, { p: [sx * 0.15, -0.07, 0.1], s: [1.1, 0.8, 0.8] });
       }
       mesh(head, G.sphere(0.09, 12, 8), sp.belly, { p: [0, -0.055, 0.17], s: [1.2, 0.75, 0.9] });
@@ -295,11 +297,11 @@ export function buildAnimal(rank, team) {
       if (tig) for (const sx of [-1, 1]) mesh(head, G.cone(0.014, 0.05, 4), WHITE, { p: [sx * 0.04, -0.115, 0.22], r: [Math.PI, 0, 0], cast: false });
       const tail = tube(bob, [[0, 0.22, -0.18], [0, 0.16, -0.36], [-0.06, 0.28, -0.48], [-0.12, 0.46, -0.44], [-0.1, 0.56, -0.36]], 0.032, F);
       tail.material = fur;
-      mesh(bob, G.sphere(0.04, 8, 6), tig ? DARK : 0x6b4320, { p: [-0.1, 0.56, -0.36] });
+      mesh(bob, G.sphere(0.04, 8, 6), ex1, { p: [-0.1, 0.56, -0.36] });
       break;
     }
     case LION: {
-      const MANE = 0xb8612a, MANE2 = 0xd17a35;
+      const MANE = ex1, MANE2 = ex2;
       mesh(head, G.sphere(0.27, 14, 10), MANE, { p: [0, 0, -0.07], s: [1.1, 1.08, 0.7] });
       for (let k = 0; k < 11; k++) {
         const a = (k / 11) * Math.PI * 2;
@@ -348,7 +350,7 @@ export function buildAnimal(rank, team) {
 
   hit.userData.dyn = true;
   for (const o of [model, bob, head, armR]) o.userData.dyn = true;
-  mergeStatic(outer);
+  mergeStatic(outer, { looseShadow: true });
   outer.userData = { rank, team, model, bob, head, armR, hit, badge, phase: Math.random() * 6.28, name: ANIMALS[rank].name };
   return outer;
 }

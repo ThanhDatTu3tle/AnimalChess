@@ -4,7 +4,8 @@ import {
   COLS, ROWS, WATER, ANIMALS, initialBoard, genMoves, applyMove, winner, boardKey,
   moveFrom, moveTo, idx, colOf, rowOf, ownerOf, rankOf, DEN_CELL,
 } from './rules.js';
-import { buildWorld, TEAM } from './scene/world.js';
+import { buildWorld } from './scene/world.js';
+import { TEAM, BIOMES, BIOME_IDS, DEFAULT_BIOMES, setTeams, distinctFrom } from './scene/biomes.js';
 import { buildAnimal } from './scene/animals.js';
 import { G, mesh, TILE_Y, WATER_Y, cellX, cellZ } from './scene/helpers.js';
 import { Net, makeCode, cleanCode } from './net.js';
@@ -15,7 +16,8 @@ const params = new URLSearchParams(location.search);
 // ---------------- Renderer / scene ----------------
 const app = $('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// màn hình độ phân giải cao: giới hạn 1.5 (khử răng cưa đã có MSAA), tiết kiệm ~45% số pixel phải tô
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 app.appendChild(renderer.domElement);
@@ -43,7 +45,39 @@ sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun);
 
-const world = buildWorld(scene);
+// ---------------- Biome ----------------
+// Lựa chọn trong menu (lưu lại cho lần sau); biome đang dựng trên map là TEAM[0].id / TEAM[1].id
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem('cothu3d.' + k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('cothu3d.' + k, JSON.stringify(v)); } catch { /* bỏ qua */ } },
+};
+const validBiome = (b) => BIOME_IDS.includes(b);
+let biomePick = store.get('biomes', DEFAULT_BIOMES).filter(validBiome);
+if (biomePick.length !== 2 || biomePick[0] === biomePick[1]) biomePick = [...DEFAULT_BIOMES];
+let onlineBiome = validBiome(store.get('biomeOnline')) ? store.get('biomeOnline') : biomePick[0];
+if (validBiome(params.get('b0'))) biomePick[0] = params.get('b0');
+if (validBiome(params.get('b1'))) biomePick[1] = distinctFrom(params.get('b1'), biomePick[0]);
+
+setTeams(biomePick[0], biomePick[1]);
+let world = buildWorld(scene);
+
+/** Đổi biome hai phe: dựng lại map (quân cờ do nơi gọi dựng lại) */
+function applyBiomes(b0, b1) {
+  if (TEAM[0].id === b0 && TEAM[1].id === b1) return false;
+  setTeams(b0, b1);
+  world.dispose();
+  world = buildWorld(scene);
+  world.setFlipped(viewSide === 1);
+  updateTeamUI();
+  return true;
+}
+function updateTeamUI() {
+  const root = document.documentElement.style;
+  root.setProperty('--a', TEAM[0].css);
+  root.setProperty('--b', TEAM[1].css);
+  for (const s of [0, 1]) $('name' + s).textContent = TEAM[s].name;
+  $('tagline').textContent = `${TEAM[0].name} đối đầu ${TEAM[1].name}: chiếm hang địch để chiến thắng!`;
+}
 const piecesRoot = new THREE.Group();
 const markersRoot = new THREE.Group();
 scene.add(piecesRoot, markersRoot);
@@ -323,9 +357,25 @@ const net = new Net({
     $('roomBox').classList.remove('hidden');
     onStatus('Đang chờ bạn bè vào phòng…', 'wait');
   },
-  onOpen(side) { newGame('online', side); },
+  onOpen(side) {
+    // tạm dựng biome của mình + một biome khác cho đối thủ, chờ đối thủ báo biome của họ
+    const other = distinctFrom(BIOME_IDS[(BIOME_IDS.indexOf(onlineBiome) + 1) % BIOME_IDS.length], onlineBiome);
+    applyBiomes(side === 0 ? onlineBiome : other, side === 0 ? other : onlineBiome);
+    newGame('online', side);
+    net.send({ t: 'hello', b: onlineBiome });
+  },
   onData(msg) {
     if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'hello' && validBiome(msg.b)) {
+      // chủ phòng (phe 0) giữ biome; khách trùng thì đổi sang biome kế tiếp (hai máy tính ra giống nhau)
+      const host = game.human === 0 ? onlineBiome : msg.b;
+      const guest = distinctFrom(game.human === 0 ? msg.b : onlineBiome, host);
+      const apply = () => {
+        if (game.busy) return setTimeout(apply, 200);
+        if (applyBiomes(host, guest)) { rebuildPieces(); refreshMarkers(); updateHud(); }
+      };
+      return apply();
+    }
     if (msg.t === 'move' && Number.isInteger(msg.m) && Number.isInteger(msg.n)) { remoteQueue.push(msg); drainRemote(); }
     else if (msg.t === 'restart') newGame('online', game.human);
   },
@@ -354,7 +404,7 @@ function joinRoom(raw) {
 
 // ---------------- Điều khiển ván ----------------
 function newGame(mode, human = 0) {
-  if (mode !== 'online') net.close();
+  if (mode !== 'online') { net.close(); applyBiomes(biomePick[0], biomePick[1]); }
   remoteQueue.length = 0;
   game.human = human;
   setView(mode === 'online' || mode === 'ai' ? human : 0);
@@ -443,6 +493,52 @@ $('sideSeg').addEventListener('click', (e) => {
   aiSide = +s;
   for (const b of $('sideSeg').children) b.classList.toggle('on', b === e.target);
 });
+// chọn biome: mỗi phe một hàng, không cho hai phe trùng nhau
+function renderBiomeUI() {
+  for (const s of [0, 1]) {
+    const box = $('bm' + s);
+    box.innerHTML = '';
+    for (const id of BIOME_IDS) {
+      const B = BIOMES[id], b = document.createElement('button');
+      b.textContent = B.emoji;
+      b.title = B.name;
+      b.dataset.b = id;
+      b.classList.toggle('on', biomePick[s] === id);
+      b.disabled = biomePick[1 - s] === id;
+      box.appendChild(b);
+    }
+    $('bmName' + s).textContent = BIOMES[biomePick[s]].name;
+  }
+  const sb = $('sideSeg').children;
+  sb[0].textContent = `${BIOMES[biomePick[0]].emoji} ${BIOMES[biomePick[0]].name} (đi trước)`;
+  sb[1].textContent = `${BIOMES[biomePick[1]].emoji} ${BIOMES[biomePick[1]].name}`;
+  const on = $('bmOn');
+  on.innerHTML = '';
+  for (const id of BIOME_IDS) {
+    const b = document.createElement('button');
+    b.textContent = BIOMES[id].emoji; b.title = BIOMES[id].name; b.dataset.b = id;
+    b.classList.toggle('on', onlineBiome === id);
+    on.appendChild(b);
+  }
+  $('bmOnName').textContent = BIOMES[onlineBiome].name;
+}
+for (const s of [0, 1]) $('bm' + s).addEventListener('click', (e) => {
+  const id = e.target.dataset.b;
+  if (!id || e.target.disabled) return;
+  biomePick[s] = id;
+  store.set('biomes', biomePick);
+  renderBiomeUI();
+  // xem trước ngay trên map khi chưa vào ván
+  if (game.mode === 'menu') { applyBiomes(biomePick[0], biomePick[1]); rebuildPieces(); }
+});
+$('bmOn').addEventListener('click', (e) => {
+  const id = e.target.dataset.b;
+  if (!id || net.connected) return;
+  onlineBiome = id;
+  store.set('biomeOnline', id);
+  renderBiomeUI();
+});
+renderBiomeUI();
 $('playAI').onclick = () => newGame('ai', aiSide);
 $('playPvP').onclick = () => newGame('pvp');
 $('playDemo').onclick = () => newGame('demo');
@@ -477,6 +573,21 @@ $('resMenu').onclick = () => { $('result').classList.add('hidden'); $('btnMenu')
 
 // ---------------- Vòng lặp ----------------
 let lastT = performance.now(), elapsed = 0, rafId = 0;
+
+// ?fps=1: hiện FPS và số draw call ở góc màn hình để đo hiệu năng
+let fpsEl = null, fpsN = 0, fpsT0 = performance.now();
+if (params.has('fps')) {
+  fpsEl = document.createElement('div');
+  fpsEl.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font:12px/1.4 monospace;pointer-events:none;white-space:pre';
+  document.body.appendChild(fpsEl);
+}
+function fpsTick(now) {
+  fpsN++;
+  if (now - fpsT0 < 500) return;
+  const i = renderer.info.render;
+  fpsEl.textContent = `${Math.round((fpsN * 1000) / (now - fpsT0))} FPS\n${i.calls} draw · ${(i.triangles / 1000).toFixed(0)}k tri`;
+  fpsN = 0; fpsT0 = now;
+}
 function frame() {
   const now = performance.now();
   const dt = Math.min((now - lastT) / 1000, 0.05);
@@ -510,14 +621,16 @@ function frame() {
   world.update(t);
   controls.update();
   renderer.render(scene, camera);
+  if (fpsEl) fpsTick(now);
   cancelAnimationFrame(rafId);
   rafId = requestAnimationFrame(frame);
 }
 
 // ---------------- Khởi động ----------------
+updateTeamUI();
 rebuildPieces();
 updateHud();
-if (import.meta.env.DEV) window.__dbg = { scene, camera, renderer, game, controls, pieces, frame, playMove, select, net };
+if (import.meta.env.DEV) window.__dbg = { scene, camera, renderer, game, controls, pieces, frame, playMove, select, net, applyBiomes, rebuildPieces, get world() { return world; } };
 const auto = params.get('mode');
 if (['ai', 'pvp', 'demo'].includes(auto)) newGame(auto, params.get('side') === '1' ? 1 : 0);
 else if (params.get('room')) joinRoom(params.get('room'));
